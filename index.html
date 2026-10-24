@@ -1,0 +1,1641 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Kovalamaca Oyunu</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; user-select:none; -webkit-user-select:none; }
+  html, body {
+    width:100%; height:100%; overflow:hidden;
+    background: #0f0f1a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    touch-action:none;
+  }
+  #gameCanvas { display:block; background: #12121f; }
+  #hud {
+    position:fixed;
+    top: max(12px, env(safe-area-inset-top));
+    left:0; right:0;
+    display:none;
+    justify-content:center;
+    pointer-events:none;
+    z-index:10;
+  }
+  #scoreBox {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 8px 20px;
+    color:#fff;
+    font-size:18px;
+    font-weight:600;
+    letter-spacing:0.3px;
+  }
+  #joystickZone { position:fixed; bottom:0; left:0; width:50%; height:100%; z-index:5; }
+  #joystickBase {
+    position:fixed; width:110px; height:110px; border-radius:50%;
+    background: rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.25);
+    display:none; z-index:6; pointer-events:none;
+  }
+  #joystickKnob {
+    position:fixed; width:50px; height:50px; border-radius:50%;
+    background: rgba(255,255,255,0.35); border:2px solid rgba(255,255,255,0.5);
+    display:none; z-index:7; pointer-events:none;
+  }
+
+  /* ---- Ortak butonlar ---- */
+  .btn {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+    color:#fff; border:none; padding:14px 32px; border-radius:30px;
+    font-size:17px; font-weight:600; box-shadow: 0 6px 20px rgba(238,90,111,0.4);
+    margin:6px;
+  }
+  .btn.secondary {
+    background: rgba(255,255,255,0.12); box-shadow:none;
+    border:1px solid rgba(255,255,255,0.25);
+  }
+
+  /* ---- Ana menü ---- */
+  #menuScreen {
+    position:fixed; inset:0; z-index:30;
+    background: radial-gradient(circle at 50% 30%, #2a1f45 0%, #0f0f1a 70%);
+    display:flex; overflow-y:auto; touch-action:pan-y;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .menuBox { margin:auto; text-align:center; width:100%; max-width:440px; color:#fff; }
+  .menuBox h1 { font-size:30px; margin-bottom:6px; }
+  .menuBox h2 { font-size:14px; font-weight:600; color:#b9b3d6; text-transform:uppercase; letter-spacing:1.2px; margin:18px 0 10px; }
+  .row { display:flex; gap:12px; justify-content:center; }
+  .charBtn, .modeBtn {
+    flex:1; background: rgba(255,255,255,0.07); color:#fff;
+    border:2px solid rgba(255,255,255,0.15); border-radius:18px; padding:12px 8px;
+    font-size:16px; font-weight:600; display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  .charBtn canvas { width:96px; height:96px; }
+  .modeBtn small { font-weight:400; font-size:12px; color:#c9c4e4; line-height:1.35; }
+  .charBtn.selected, .modeBtn.selected {
+    border-color:#ffd166; background: rgba(255,209,102,0.14);
+    box-shadow: 0 0 18px rgba(255,209,102,0.25);
+  }
+  #charHint { margin-top:10px; font-size:13px; color:#c9c4e4; }
+  #startBtn { margin-top:22px; width:100%; max-width:280px; }
+
+  /* ---- Bitiş ekranları ---- */
+  .endScreen {
+    position:fixed; inset:0; background: rgba(8,8,18,0.88);
+    display:none; align-items:center; justify-content:center; z-index:20; overflow:hidden;
+  }
+  #fireworksCanvas { position:absolute; inset:0; z-index:0; }
+  .endContent { position:relative; z-index:1; text-align:center; padding:24px; max-width:520px; }
+  .endContent h1 { color:#fff; font-size:26px; margin-bottom:16px; text-shadow: 0 0 20px rgba(255,180,80,0.6); }
+  #deathRecord { display:none; color:#ffd166; font-size:20px; font-weight:700; margin-bottom:12px; text-shadow:0 0 14px rgba(255,209,102,0.6); }
+  .endContent p { color:#f0e6ff; font-size:16px; line-height:1.6; margin-bottom:26px; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="hud"><div id="scoreBox"></div></div>
+
+<div id="joystickZone"></div>
+<div id="joystickBase"></div>
+<div id="joystickKnob"></div>
+
+<!-- ANA MENÜ -->
+<div id="menuScreen">
+  <div class="menuBox">
+    <h1>🎮 Kovalamaca</h1>
+    <h2>Karakterini seç</h2>
+    <div class="row">
+      <button class="charBtn selected" data-char="boy"><canvas width="128" height="128"></canvas><span>Erkek</span></button>
+      <button class="charBtn" data-char="girl"><canvas width="128" height="128"></canvas><span>Kadın</span></button>
+    </div>
+    <p id="charHint">Yemler kadın karakter olacak</p>
+    <h2>Mod seç</h2>
+    <div class="row">
+      <button class="modeBtn selected" data-mode="normal">Normal<small>8 yem ye, oyun biter</small></button>
+      <button class="modeBtn" data-mode="endless">♾️ Sonsuz<small>Sınırsız yem, bombalar ve kalkan</small></button>
+    </div>
+    <button class="btn" id="startBtn">Başla</button>
+  </div>
+</div>
+
+<!-- NORMAL MOD BİTİŞ (havai fişek + mesaj) -->
+<div class="endScreen" id="gameOverScreen">
+  <canvas id="fireworksCanvas"></canvas>
+  <div class="endContent">
+    <h1>🎆 8. Ayımız Kutlu Olsun 🎆</h1>
+    <p>Hayatım boyunca beklediğim yalnız sendin ve en sonunda seninle ödüllendirildim. Her anımı güzelleştirdiğin ve beni bu kadar mutlu ettiğin için teşekkür ederim. Seni hep böyle ham ham yiyeceğim, bir sürü günümüz olacak. Seni çok seviyorum, nice bir sürü 8 aylara. 8. ayımız kutlu olsun sevgilim.</p>
+    <button class="btn" id="restartBtn">Tekrar Oyna</button>
+    <button class="btn secondary" id="menuBtnWin">Ana Menü</button>
+  </div>
+</div>
+
+<!-- SONSUZ MOD ÖLÜM EKRANI -->
+<div class="endScreen" id="deathScreen">
+  <div class="endContent">
+    <h1>💥 Bomba patladı!</h1>
+    <div id="deathRecord">🏆 Yeni rekor!</div>
+    <p>Skorun: <b id="deathScore">0</b><br>En iyi skor: <b id="deathBest">0</b></p>
+    <button class="btn" id="retryBtn">Tekrar Dene</button>
+    <button class="btn secondary" id="menuBtnDead">Ana Menü</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ================= DURUM / AYARLAR =================
+let state = 'menu';            // menu | playing | dead | over
+let selectedChar = 'boy';      // boy | girl
+let selectedMode = 'normal';   // normal | endless
+let winActive = false;
+let exploded = false;
+
+const CHEW_DURATION = 330;     // ms
+const TOTAL_TO_EAT = 8;        // normal mod
+const FOOD_RADIUS = 18;
+const MAX_FOODS = 4;
+const BOMB_WINDOW = 4000;      // ms - bomba zaman penceresi (her 4 sn'de BASE_BOMBS bomba)
+const BASE_BOMBS = 2;          // başlangıçta pencere başına bomba sayısı
+const BOMB_LIFE = 3000;        // ms - bomba 3 saniye sonra kaybolur
+const BOMB_RADIUS = 20;
+const BOMB_STEP = 15;          // her 15 yemde bomba sayısı +1
+const MEGA_CHANCE = 0.08;      // mega bomba ihtimali
+const RED_CHANCE = 0.25;       // kırmızı bomba ihtimali
+const MEGA_SCALE = 3;          // mega bomba normalin 3 katı
+const BOMB_SIZES = { normal: BOMB_RADIUS, red: BOMB_RADIUS, mega: BOMB_RADIUS * MEGA_SCALE };
+const BOMB_LOOK = {
+  normal: { body: '#1b1b1f', blink: '#b3262b', rim: null,      glow0: null,                   glow1: null },
+  red:    { body: '#d11a22', blink: '#ff9a9a', rim: '#ff6a6a', glow0: 'rgba(255,40,40,0.6)',  glow1: 'rgba(255,40,40,0)' },
+  mega:   { body: '#2a1030', blink: '#b3262b', rim: '#ff7b00', glow0: 'rgba(255,120,0,0.55)', glow1: 'rgba(255,120,0,0)' }
+};
+const SHIELD_STEP = 50;        // her 50 yemde 1 kalkan
+const HERO_INTERVAL = 15000;   // ms - bomba adam her 15 sn'de bir gelir
+const HERO_LIFE = 3000;        // ms - bomba adam ekranda kalma süresi = yemlerin hızlı kalma süresi
+const HERO_RADIUS = 32;
+const HERO_BOMBS = 5;          // bomba adamın uzaktan çıkardığı bomba sayısı
+const HERO_BOMB_MIN_DIST = 220;
+const WIZARD_MIN_SCORE = 10;   // büyücü sadece skor 10 ve sonrasında çıkar
+const WIZARD_RISE = 500;       // ms - alttan yükselme
+const WIZARD_CHARGE = 1100;    // ms - alev topunu hazırlama (uyarı çizgisi görünür)
+const WIZARD_HOLD = 300;       // ms - atıştan sonra bekleme
+const WIZARD_LEAVE = 500;      // ms - aşağı inip kaybolma
+const WIZARD_TOTAL = WIZARD_RISE + WIZARD_CHARGE + WIZARD_HOLD + WIZARD_LEAVE;
+const WIZARD_LANES = 4;        // büyücü aynı anda 4 şeritten alev topu atar
+const LANE_MIN_GAP = 60;       // şeritler arası en az mesafe (px)
+const FIREBALL_RADIUS = 16;
+const FIREBALL_SPEED = 10;     // px / 60fps-frame
+const FOOD_BOOST_MULT = 5;     // yemler, oyuncu hızının 5 katı hızla kaçar
+
+const player = { x: 0, y: 0, radius: 26, speed: 3.2, chewTimer: 0 };
+
+let eaten = 0;
+let foods = [];
+let bombs = [];
+let shieldItem = null;
+let hasShield = false;
+let gameTime = 0;
+let windowEnd = 0;
+let bombQueue = [];
+let shieldTarget = 1;
+let deadTimer = 0;
+let fx = [];                   // ana canvas parçacıkları (patlama vb.)
+let hero = null;               // bomba adam
+let nextHeroTime = HERO_INTERVAL;
+let wizard = null;             // alttan çıkan büyücü
+let fireballs = [];            // viking elektriği / cadı yılanları
+let wizardNext = Infinity;     // bir sonraki büyücünün çıkış zamanı (gameTime, ms)
+let foodBoost = 0;             // ms - yemlerin hız bonusu kalan süre
+
+// En iyi skor (tarayıcıda saklanır)
+let bestScore = 0;
+try { bestScore = parseInt(localStorage.getItem('kovalamaca_best') || '0', 10) || 0; } catch (e) {}
+
+function foodType() { return selectedChar === 'boy' ? 'girl' : 'boy'; }
+
+function resetPlayer() {
+  player.x = canvas.width / 2;
+  player.y = canvas.height / 2;
+}
+
+function randomPos(margin, minDist) {
+  let x, y, tries = 0;
+  do {
+    x = margin + Math.random() * Math.max(1, canvas.width - margin * 2);
+    y = margin + Math.random() * Math.max(1, canvas.height - margin * 2);
+    tries++;
+  } while (Math.hypot(x - player.x, y - player.y) < minDist && tries < 30);
+  return { x, y };
+}
+
+function spawnFood() {
+  const p = randomPos(FOOD_RADIUS + 20, 150);
+  return {
+    x: p.x, y: p.y, radius: FOOD_RADIUS,
+    bob: Math.random() * Math.PI * 2,
+    vx: (Math.random() - 0.5) * 1.0,
+    vy: (Math.random() - 0.5) * 1.0
+  };
+}
+
+function initFoods() {
+  foods = [];
+  for (let i = 0; i < MAX_FOODS; i++) foods.push(spawnFood());
+}
+
+function pickBombType() {
+  const r = Math.random();
+  if (r < MEGA_CHANCE) return 'mega';
+  if (r < MEGA_CHANCE + RED_CHANCE) return 'red';
+  return 'normal';
+}
+
+function spawnBomb(minDist, type) {
+  type = type || pickBombType();
+  const radius = BOMB_SIZES[type];
+  // Dev bomba oyuncunun hemen yanında çıkmasın
+  const dist = type === 'mega' ? Math.max(minDist || 140, 240) : (minDist || 140);
+  const p = randomPos(radius + 20, dist);
+  bombs.push({ x: p.x, y: p.y, age: 0, type: type, radius: radius });
+  return p;
+}
+
+// Bomba adam veya büyücü çıkınca 1 adet mega bomba kesin düşer
+function spawnGuaranteedMega() {
+  const p = spawnBomb(240, 'mega');
+  burst(fx, p.x, p.y, ['#ff7b00', '#ffd166', '#ffffff'], 24, 1, 4);
+}
+
+// Çarpışma: kırmızı bomba kenarına değmek (1 px) bile öldürür, diğerleri biraz toleranslı
+function bombHit(b) {
+  const d = Math.hypot(player.x - b.x, player.y - b.y);
+  if (b.type === 'red') return d < player.radius + b.radius + 1;
+  return d < player.radius * 0.7 + b.radius * 0.8;
+}
+
+// ================= KARAKTER ÇİZİMİ =================
+const HAIR = {
+  boy: {
+    color: '#8a5a2b', skin: '#f4c29a',
+    curls: [
+      [-0.75,-0.85,0.42],[-0.35,-1.05,0.45],[0.1,-1.08,0.45],[0.55,-0.95,0.42],[0.85,-0.7,0.38],[-1.0,-0.5,0.4],
+      [-0.95,0.35,0.4],[-0.75,0.85,0.35],[1.0,0.3,0.38],[0.8,0.82,0.33]
+    ]
+  },
+  girl: {
+    color: '#161616', skin: '#f7cba4',
+    curls: [
+      [-0.7,-0.8,0.4],[-0.3,-1.05,0.42],[0.15,-1.05,0.42],[0.6,-0.85,0.4],[0.9,-0.5,0.38],[-0.95,-0.45,0.38],
+      [-1.0,0.1,0.35],[1.0,0.1,0.35],[-0.85,0.6,0.32],[0.85,0.6,0.32]
+    ]
+  }
+};
+
+// Thor tarzı gür sakal + bıyık (sadece erkek karakter)
+function drawBeard(c, r) {
+  // Sakal: yanaklardan çeneye, çenenin altına uzar
+  c.fillStyle = '#8a5a2b';
+  c.beginPath();
+  c.moveTo(r * 0.966, r * 0.259);
+  c.bezierCurveTo(r * 1.08, r * 0.95, r * 0.55, r * 1.55, 0, r * 1.55);
+  c.bezierCurveTo(-r * 0.55, r * 1.55, -r * 1.08, r * 0.95, -r * 0.966, r * 0.259);
+  c.quadraticCurveTo(0, r * 0.0, r * 0.966, r * 0.259);
+  c.closePath();
+  c.fill();
+  c.strokeStyle = 'rgba(60,35,15,0.35)';
+  c.lineWidth = Math.max(1, r * 0.05);
+  c.stroke();
+
+  // Sakal dokusu (ince çizgiler)
+  c.strokeStyle = 'rgba(60,35,15,0.28)';
+  c.lineWidth = Math.max(1, r * 0.04);
+  c.lineCap = 'round';
+  [-0.5, -0.2, 0.2, 0.5].forEach(dx => {
+    c.beginPath();
+    c.moveTo(dx * r, r * 0.75);
+    c.quadraticCurveTo(dx * r * 1.15, r * 1.1, dx * r * 0.9, r * 1.38);
+    c.stroke();
+  });
+
+  // Ağız için ten rengi boşluk
+  c.fillStyle = '#e9ad86';
+  c.beginPath();
+  c.ellipse(0, r * 0.43, r * 0.3, r * 0.15, 0, 0, Math.PI * 2);
+  c.fill();
+
+  // Bıyık (iki yana kıvrık)
+  c.fillStyle = '#6f4521';
+  [-1, 1].forEach(sgn => {
+    c.save();
+    c.translate(sgn * r * 0.2, r * 0.2);
+    c.rotate(sgn * 0.3);
+    c.beginPath();
+    c.ellipse(0, 0, r * 0.27, r * 0.1, 0, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+  });
+}
+
+function drawCharacter(c, type, x, y, r, chewTimer, bob) {
+  const look = HAIR[type];
+  let mouthOpen = 0;
+  if (chewTimer > 0) {
+    const progress = 1 - (chewTimer / CHEW_DURATION);
+    mouthOpen = Math.sin(progress * Math.PI);
+  }
+  const yo = bob ? Math.sin(bob) * 3 : 0;
+
+  c.save();
+  c.translate(x, y + yo);
+
+  // Yüz
+  c.fillStyle = look.skin;
+  c.beginPath();
+  c.arc(0, 0, r, 0, Math.PI * 2);
+  c.fill();
+
+  // Erkek karakter: sakal + bıyık
+  if (type === 'boy') drawBeard(c, r);
+
+  // Gözler (bize bakıyor)
+  c.fillStyle = '#2b2b2b';
+  c.beginPath();
+  c.arc(-r * 0.32, -r * 0.1, r * 0.12, 0, Math.PI * 2);
+  c.arc(r * 0.32, -r * 0.1, r * 0.12, 0, Math.PI * 2);
+  c.fill();
+
+  // Ağız: normalde gülümseme, yerken açılıp kapanır
+  if (type === 'boy') {
+    if (mouthOpen < 0.08) {
+      c.strokeStyle = '#8a3f2a';
+      c.lineWidth = Math.max(1.5, r * 0.07);
+      c.lineCap = 'round';
+      c.beginPath();
+      c.arc(0, r * 0.3, r * 0.24, 0.15 * Math.PI, 0.85 * Math.PI);
+      c.stroke();
+    } else {
+      c.fillStyle = '#5a2a20';
+      c.beginPath();
+      c.ellipse(0, r * 0.45, r * 0.22, r * 0.07 + r * 0.2 * mouthOpen, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+  } else if (mouthOpen < 0.08) {
+    c.strokeStyle = '#a05a3a';
+    c.lineWidth = Math.max(1.5, r * 0.085);
+    c.lineCap = 'round';
+    c.beginPath();
+    c.arc(0, r * 0.12, r * 0.42, 0.12 * Math.PI, 0.88 * Math.PI);
+    c.stroke();
+  } else {
+    const openHeight = r * 0.55 * mouthOpen;
+    c.fillStyle = '#5a2a20';
+    c.beginPath();
+    c.ellipse(0, r * 0.25, r * 0.32, openHeight * 0.5 + r * 0.07, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+
+  // Saç (kıvırcık)
+  c.fillStyle = look.color;
+  look.curls.forEach(([dx, dy, rr]) => {
+    c.beginPath();
+    c.arc(dx * r, dy * r, rr * r, 0, Math.PI * 2);
+    c.fill();
+  });
+
+  c.restore();
+}
+
+// ================= BOMBA / KALKAN ÇİZİMİ =================
+function drawBomb(b) {
+  const remaining = BOMB_LIFE - b.age;
+  const blink = remaining < 1000 && Math.floor(b.age / 100) % 2 === 0;
+  const k = b.radius / BOMB_RADIUS;
+  const look = BOMB_LOOK[b.type];
+  const R = BOMB_RADIUS;
+
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.scale(k, k);
+
+  // Tehlike parlaması (kırmızı ve mega bombalar)
+  if (look.glow0) {
+    const pulse = 1 + Math.sin(performance.now() / 120) * 0.1;
+    const g = ctx.createRadialGradient(0, 0, R * 0.8, 0, 0, R * 2.1 * pulse);
+    g.addColorStop(0, look.glow0);
+    g.addColorStop(1, look.glow1);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 2.1 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Kalan süre halkası
+  ctx.strokeStyle = 'rgba(255,90,90,0.8)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, R + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (remaining / BOMB_LIFE));
+  ctx.stroke();
+
+  // Gövde
+  ctx.fillStyle = blink ? look.blink : look.body;
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.fill();
+  if (look.rim) {
+    ctx.strokeStyle = look.rim;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+
+  // Parlama
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.beginPath();
+  ctx.arc(-R * 0.35, -R * 0.35, R * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Kırmızı bombada uyarı işareti, mega bombada kızgın gözler
+  if (b.type === 'red') {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-2, -R * 0.45, 4, R * 0.6);
+    ctx.beginPath();
+    ctx.arc(0, R * 0.42, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (b.type === 'mega') {
+    ctx.fillStyle = '#ff7b00';
+    ctx.beginPath();
+    ctx.ellipse(-R * 0.35, -R * 0.05, R * 0.2, R * 0.13, 0.4, 0, Math.PI * 2);
+    ctx.ellipse(R * 0.35, -R * 0.05, R * 0.2, R * 0.13, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ff7b00';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, R * 0.55, R * 0.3, 1.15 * Math.PI, 1.85 * Math.PI);
+    ctx.stroke();
+  }
+
+  // Kapak + fitil
+  ctx.fillStyle = '#555';
+  ctx.fillRect(-5, -R - 4, 10, 6);
+  ctx.strokeStyle = '#c9a66b';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -R - 4);
+  ctx.quadraticCurveTo(8, -R - 12, 13, -R - 10);
+  ctx.stroke();
+
+  // Kıvılcım
+  ctx.fillStyle = Math.random() > 0.5 ? '#ffd166' : '#ff7b00';
+  ctx.beginPath();
+  ctx.arc(13, -R - 10, 3 + Math.random() * 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ================= BÜYÜCÜ: VİKİNG (kadın seçince) / CADI (erkek seçince) =================
+// Viking: mavi şeritler + elektrik. Cadı: yeşil şeritler + yılan. İkisi de alttan yükselir, değersen ölürsün.
+const BOSS_HEIGHT = 134;
+const BOSS = {
+  viking: { dx: 42, ly: -82, rgb: '80,170,255', halfW: 46, speed: 13, proj: 'bolt' },
+  witch:  { dx: 20, ly: -34, rgb: '60,220,120', halfW: 28, speed: 9,  proj: 'snake' }
+};
+const SNAKE_SEGS = 9;
+const SNAKE_SPACING = 16;
+const SNAKE_AMP = 9;
+
+function wizardOriginY(w) {
+  const t = w.t;
+  let e;
+  if (t < WIZARD_RISE) { const k = t / WIZARD_RISE; e = k * (2 - k); }
+  else if (t < WIZARD_RISE + WIZARD_CHARGE + WIZARD_HOLD) e = 1;
+  else e = Math.max(0, 1 - (t - WIZARD_RISE - WIZARD_CHARGE - WIZARD_HOLD) / WIZARD_LEAVE);
+  return canvas.height + 140 - e * 146;
+}
+
+function drawLaneBand(x, yStart, k, pulse, rgb) {
+  const grad = ctx.createLinearGradient(0, yStart, 0, 0);
+  grad.addColorStop(0, 'rgba(' + rgb + ',' + (0.18 + 0.2 * k + 0.12 * pulse) + ')');
+  grad.addColorStop(1, 'rgba(' + rgb + ',0.03)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - FIREBALL_RADIUS, 0, FIREBALL_RADIUS * 2, yStart);
+}
+
+// Büyüyen enerji topu (viking: mavi, cadı: yeşil)
+function drawChargeOrb(x, y, k, kind) {
+  const orbR = 8 + k * 12;
+  const g = ctx.createRadialGradient(x, y, 1, x, y, orbR * 1.8);
+  if (kind === 'viking') {
+    g.addColorStop(0, 'rgba(235,248,255,1)');
+    g.addColorStop(0.4, 'rgba(90,180,255,0.95)');
+    g.addColorStop(1, 'rgba(40,120,255,0)');
+  } else {
+    g.addColorStop(0, 'rgba(235,255,225,1)');
+    g.addColorStop(0.4, 'rgba(70,230,130,0.95)');
+    g.addColorStop(1, 'rgba(20,180,90,0)');
+  }
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, orbR * 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (kind === 'viking') {
+    // Çıtırdayan küçük elektrik çizgileri
+    ctx.strokeStyle = '#dff2ff';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const a = Math.random() * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(a) * orbR * 0.7, y + Math.sin(a) * orbR * 0.7);
+      ctx.lineTo(x + Math.cos(a + 0.3) * orbR * 1.2, y + Math.sin(a + 0.3) * orbR * 1.2);
+      ctx.lineTo(x + Math.cos(a - 0.1) * orbR * 1.7, y + Math.sin(a - 0.1) * orbR * 1.7);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawWizardWarning(w) {
+  if (w.t < WIZARD_RISE || w.t >= WIZARD_RISE + WIZARD_CHARGE) return;
+  const B = BOSS[w.kind];
+  const k = (w.t - WIZARD_RISE) / WIZARD_CHARGE;
+  const pulse = 0.5 + 0.5 * Math.sin(w.t / 70);
+  const oy = wizardOriginY(w);
+
+  w.lanes.forEach((lx, i) => {
+    if (i === 0) {
+      drawLaneBand(lx, oy + B.ly, k, pulse, B.rgb);
+    } else {
+      const by = canvas.height - 14;
+      drawLaneBand(lx, by, k, pulse, B.rgb);
+      drawChargeOrb(lx, by, k, w.kind);
+    }
+  });
+}
+
+function circ(c, x, y, r, col) {
+  c.fillStyle = col;
+  c.beginPath();
+  c.arc(x, y, r, 0, Math.PI * 2);
+  c.fill();
+}
+
+function starShape(c, cx, cy, r) {
+  c.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const rr = i % 2 === 0 ? r : r * 0.45;
+    const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+    if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+  }
+  c.closePath();
+}
+
+// ---- CADI (fotoğraftaki karakter, kaynak koordinatlarda çizilir) ----
+function drawWitchBody() {
+  const c = ctx;
+  const k = BOSS_HEIGHT / 1345;
+  const SKIN = '#f0c8a0';
+  c.save();
+  c.scale(k, k);
+  c.translate(-404, -1390);
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+
+  // Kollar
+  c.fillStyle = '#111';
+  c.beginPath(); c.moveTo(312, 690); c.lineTo(240, 850); c.lineTo(165, 1012); c.lineTo(250, 1038); c.lineTo(325, 830); c.lineTo(355, 760); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(496, 690); c.lineTo(568, 850); c.lineTo(643, 1012); c.lineTo(558, 1038); c.lineTo(483, 830); c.lineTo(453, 760); c.closePath(); c.fill();
+  c.strokeStyle = '#a255e8'; c.lineWidth = 9;
+  c.beginPath(); c.moveTo(165, 1012); c.lineTo(250, 1038); c.moveTo(643, 1012); c.lineTo(558, 1038); c.stroke();
+  circ(c, 207, 1055, 27, SKIN);
+  circ(c, 601, 1055, 27, SKIN);
+
+  // Elbise
+  c.fillStyle = '#111';
+  c.beginPath(); c.moveTo(312, 690); c.lineTo(497, 690); c.lineTo(478, 800); c.lineTo(455, 950); c.lineTo(540, 1150); c.lineTo(625, 1388); c.lineTo(185, 1388); c.lineTo(262, 1150); c.lineTo(357, 950); c.lineTo(330, 800); c.closePath(); c.fill();
+
+  // Etek yırtmacı
+  c.fillStyle = SKIN;
+  c.beginPath(); c.moveTo(482, 1130); c.lineTo(430, 1388); c.lineTo(568, 1388); c.closePath(); c.fill();
+  c.strokeStyle = '#a255e8'; c.lineWidth = 7;
+  c.beginPath(); c.moveTo(430, 1388); c.lineTo(482, 1130); c.lineTo(568, 1388); c.moveTo(262, 1180); c.lineTo(185, 1388); c.stroke();
+  c.fillStyle = '#d8b4fe';
+  starShape(c, 338, 1172, 20); c.fill();
+  starShape(c, 284, 1305, 18); c.fill();
+
+  // Kemer
+  c.strokeStyle = '#9b5de5'; c.lineWidth = 24;
+  c.beginPath(); c.moveTo(352, 952); c.quadraticCurveTo(404, 990, 458, 952); c.stroke();
+
+  // Boyun + V yaka + kolye
+  c.fillStyle = '#e8b98f'; c.fillRect(368, 570, 72, 125);
+  c.fillStyle = SKIN;
+  c.beginPath(); c.moveTo(312, 690); c.lineTo(497, 690); c.lineTo(404, 855); c.closePath(); c.fill();
+  c.strokeStyle = '#a255e8'; c.lineWidth = 8;
+  c.beginPath(); c.moveTo(312, 690); c.lineTo(404, 855); c.lineTo(497, 690); c.stroke();
+  c.strokeStyle = '#111'; c.lineWidth = 6;
+  c.beginPath(); c.moveTo(345, 685); c.quadraticCurveTo(404, 710, 465, 685); c.moveTo(404, 705); c.lineTo(404, 745); c.stroke();
+  circ(c, 404, 770, 32, '#c9c9d4');
+  circ(c, 404, 770, 23, '#15151f');
+  circ(c, 395, 761, 8, '#bdbdc8');
+
+  // Kıvırcık siyah saç
+  const hairL = [[225, 400, 62], [190, 500, 58], [205, 610, 66], [250, 715, 60], [238, 815, 56], [254, 898, 44]];
+  hairL.forEach(([x, y, r], i) => {
+    const col = i % 2 ? '#1f1f1f' : '#161616';
+    circ(c, x, y, r, col);
+    circ(c, 808 - x, y, r, col);
+  });
+  circ(c, 330, 380, 72, '#161616'); circ(c, 404, 350, 80, '#161616'); circ(c, 480, 380, 72, '#161616');
+
+  // Yeşil ve mor tutamlar
+  c.lineWidth = 22;
+  c.strokeStyle = '#3ddc84';
+  c.beginPath(); c.moveTo(242, 395); c.bezierCurveTo(205, 520, 228, 720, 257, 900); c.stroke();
+  c.strokeStyle = '#a24dff';
+  c.beginPath(); c.moveTo(566, 395); c.bezierCurveTo(603, 520, 580, 720, 551, 900); c.stroke();
+
+  // Yüz
+  circ(c, 404, 455, 135, SKIN);
+  // Kâkül
+  c.fillStyle = '#141414';
+  c.beginPath();
+  c.moveTo(272, 440); c.bezierCurveTo(265, 300, 540, 300, 536, 440);
+  c.quadraticCurveTo(515, 380, 470, 405); c.quadraticCurveTo(437, 425, 404, 402);
+  c.quadraticCurveTo(371, 425, 338, 405); c.quadraticCurveTo(293, 380, 272, 440);
+  c.closePath(); c.fill();
+  // Kaşlar (kızgın) + gözler
+  c.strokeStyle = '#141414'; c.lineWidth = 14;
+  c.beginPath(); c.moveTo(303, 420); c.lineTo(398, 448); c.moveTo(505, 420); c.lineTo(410, 448); c.stroke();
+  circ(c, 356, 466, 17, '#141414');
+  circ(c, 452, 466, 17, '#141414');
+  // Yanak benekleri
+  circ(c, 305, 487, 8, '#b0203d'); circ(c, 502, 487, 8, '#b0203d');
+  circ(c, 290, 505, 3.5, '#7a2a2a'); circ(c, 298, 517, 3.5, '#7a2a2a');
+  circ(c, 512, 505, 3.5, '#7a2a2a'); circ(c, 518, 517, 3.5, '#7a2a2a');
+  // Somurtan ağız
+  c.strokeStyle = '#a8204a'; c.lineWidth = 15;
+  c.beginPath(); c.moveTo(354, 568); c.quadraticCurveTo(404, 530, 454, 568); c.stroke();
+
+  // Şapka
+  c.fillStyle = '#2d1b5e';
+  c.beginPath(); c.ellipse(404, 298, 240, 38, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#4a2a8a';
+  c.beginPath();
+  c.moveTo(268, 290); c.lineTo(395, 62); c.quadraticCurveTo(425, 20, 475, 55);
+  c.quadraticCurveTo(502, 88, 485, 130); c.lineTo(540, 290); c.closePath(); c.fill();
+  c.fillStyle = '#18102e';
+  c.beginPath(); c.moveTo(268, 288); c.quadraticCurveTo(404, 322, 540, 288); c.lineTo(532, 270); c.quadraticCurveTo(404, 300, 276, 270); c.closePath(); c.fill();
+  c.fillStyle = '#d8b4fe';
+  starShape(c, 427, 108, 18); c.fill();
+  starShape(c, 397, 190, 32); c.fill();
+  starShape(c, 472, 240, 22); c.fill();
+  starShape(c, 338, 252, 20); c.fill();
+
+  c.restore();
+}
+
+// ---- VİKİNG (fotoğraftaki karakter, kaynak koordinatlarda çizilir) ----
+function drawVikingBody() {
+  const c = ctx;
+  const k = BOSS_HEIGHT / 1000;
+  const SKIN = '#eec9a1', BROWN = '#8a5a2b', GRAY = '#7e8590';
+  c.save();
+  c.scale(k, k);
+  c.translate(-603, -1250);
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+
+  // Pelerin
+  c.fillStyle = '#b3332d';
+  c.beginPath(); c.moveTo(400, 880); c.lineTo(805, 880); c.lineTo(965, 1250); c.lineTo(240, 1250); c.closePath(); c.fill();
+
+  // Çekiç sapı (elin arkasında)
+  c.fillStyle = '#6b4220';
+  c.beginPath(); c.roundRect(898, 700, 28, 500, 12); c.fill();
+  c.fillStyle = '#f0c060';
+  c.fillRect(892, 880, 40, 18); c.fillRect(892, 1150, 40, 18);
+
+  // Gövde zırhı
+  c.fillStyle = GRAY; c.strokeStyle = '#666d78'; c.lineWidth = 6;
+  c.beginPath(); c.moveTo(310, 1225); c.lineTo(340, 960); c.quadraticCurveTo(603, 850, 860, 960); c.lineTo(895, 1225); c.closePath(); c.fill(); c.stroke();
+  // Altın kuşak + düğme
+  c.strokeStyle = '#f0c060'; c.lineWidth = 42; c.lineCap = 'butt';
+  c.beginPath(); c.moveTo(442, 935); c.lineTo(780, 1175); c.stroke();
+  c.lineCap = 'round';
+  circ(c, 603, 1127, 32, '#f0c060');
+
+  // Omuzlar + sol kol
+  c.lineWidth = 6; c.strokeStyle = '#707682';
+  c.fillStyle = '#9aa0ad';
+  c.beginPath(); c.arc(365, 945, 65, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.beginPath(); c.arc(835, 940, 65, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.fillStyle = GRAY; c.strokeStyle = '#666d78';
+  c.beginPath(); c.roundRect(330, 978, 75, 160, 36); c.fill(); c.stroke();
+  circ(c, 367, 1183, 38, SKIN);
+
+  // Boynuzlar
+  [[1, 0], [-1, 1206]].forEach(([sgn]) => {
+    const fx = (x) => sgn === 1 ? x : 1206 - x;
+    const path = () => {
+      c.beginPath();
+      c.moveTo(fx(430), 350);
+      c.bezierCurveTo(fx(330), 300, fx(265), 350, fx(290), 450);
+      c.bezierCurveTo(fx(300), 520, fx(380), 520, fx(392), 462);
+    };
+    c.lineWidth = 64; c.strokeStyle = '#7a6a3a'; path(); c.stroke();
+    c.lineWidth = 44; c.strokeStyle = '#e0d0a0'; path(); c.stroke();
+  });
+
+  // Saç (arka) + yüz
+  circ(c, 603, 430, 205, BROWN);
+  circ(c, 470, 495, 80, BROWN);
+  circ(c, 736, 495, 80, BROWN);
+  circ(c, 603, 520, 142, SKIN);
+  // Alın saçı
+  c.fillStyle = BROWN;
+  c.beginPath(); c.moveTo(487, 497); c.quadraticCurveTo(487, 440, 603, 430); c.quadraticCurveTo(720, 440, 720, 497); c.quadraticCurveTo(603, 465, 487, 497); c.closePath(); c.fill();
+
+  // Sakal
+  c.fillStyle = BROWN;
+  c.beginPath(); c.moveTo(450, 600); c.bezierCurveTo(445, 780, 540, 885, 603, 885); c.bezierCurveTo(666, 885, 765, 780, 757, 600); c.lineTo(450, 600); c.closePath(); c.fill();
+  circ(c, 470, 648, 54, BROWN);
+  circ(c, 736, 648, 54, BROWN);
+  // Bıyık
+  c.fillStyle = '#7a4a22';
+  c.beginPath(); c.moveTo(498, 632); c.quadraticCurveTo(555, 592, 603, 620); c.quadraticCurveTo(651, 592, 708, 632); c.quadraticCurveTo(603, 668, 498, 632); c.closePath(); c.fill();
+  // Açık gülen ağız
+  c.fillStyle = '#5c1f1f';
+  c.beginPath(); c.moveTo(543, 675); c.lineTo(665, 675); c.quadraticCurveTo(655, 748, 603, 754); c.quadraticCurveTo(552, 748, 543, 675); c.closePath(); c.fill();
+  c.fillStyle = '#f1ebe0'; c.fillRect(550, 678, 108, 22);
+  c.strokeStyle = '#c9c0b0'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(577, 678); c.lineTo(577, 700); c.moveTo(603, 678); c.lineTo(603, 700); c.moveTo(630, 678); c.lineTo(630, 700); c.stroke();
+  c.fillStyle = '#b5524f'; c.beginPath(); c.ellipse(603, 733, 30, 13, 0, 0, Math.PI * 2); c.fill();
+  // Sakal çizgileri
+  c.strokeStyle = '#6b4220'; c.lineWidth = 5;
+  c.beginPath(); c.moveTo(555, 762); c.lineTo(567, 870); c.moveTo(603, 756); c.lineTo(603, 895); c.moveTo(651, 762); c.lineTo(640, 870); c.stroke();
+
+  // Miğfer bandı + altın süs
+  c.fillStyle = '#a8afbd'; c.strokeStyle = '#7b8294'; c.lineWidth = 6;
+  c.beginPath(); c.moveTo(420, 322); c.quadraticCurveTo(603, 255, 787, 322); c.lineTo(767, 415); c.quadraticCurveTo(603, 355, 440, 415); c.closePath(); c.fill(); c.stroke();
+  circ(c, 603, 345, 19, '#f0c060');
+
+  // Kaşlar + gözler
+  c.strokeStyle = '#3a2418'; c.lineWidth = 22;
+  c.beginPath(); c.moveTo(512, 512); c.lineTo(583, 540); c.moveTo(694, 512); c.lineTo(623, 540); c.stroke();
+  circ(c, 542, 562, 19, '#1d1218');
+  circ(c, 664, 562, 19, '#1d1218');
+
+  // Sağ kol + el (sapı tutuyor)
+  c.strokeStyle = GRAY; c.lineWidth = 70;
+  c.beginPath(); c.moveTo(815, 960); c.lineTo(885, 1000); c.stroke();
+  circ(c, 912, 1002, 40, SKIN);
+
+  // Çekiç başı
+  c.fillStyle = '#a8afbd'; c.strokeStyle = '#3fa0e0'; c.lineWidth = 9;
+  c.beginPath(); c.roundRect(800, 573, 225, 138, 26); c.fill(); c.stroke();
+  c.fillStyle = '#8b92a1';
+  c.fillRect(803, 580, 34, 124); c.fillRect(989, 580, 33, 124);
+  c.strokeStyle = '#ffffff'; c.lineWidth = 9;
+  c.beginPath(); c.moveTo(852, 604); c.lineTo(975, 604); c.stroke();
+  c.strokeStyle = '#6b7280'; c.lineWidth = 8;
+  c.beginPath(); c.moveTo(872, 652); c.lineTo(895, 633); c.lineTo(912, 666); c.lineTo(935, 640); c.stroke();
+
+  // Çekiçte çıtırdayan elektrik
+  if (Math.random() > 0.3) {
+    c.strokeStyle = '#cfeaff'; c.lineWidth = 7;
+    c.beginPath(); c.moveTo(1023, 610); c.lineTo(1060, 585); c.lineTo(1048, 555); c.lineTo(1085, 535); c.stroke();
+    c.beginPath(); c.moveTo(1025, 675); c.lineTo(1065, 695); c.lineTo(1050, 730); c.lineTo(1085, 758); c.stroke();
+    c.beginPath(); c.moveTo(918, 712); c.lineTo(936, 745); c.lineTo(906, 770); c.lineTo(930, 815); c.stroke();
+  }
+
+  c.restore();
+}
+
+function drawWizard(w) {
+  const oy = wizardOriginY(w);
+  const B = BOSS[w.kind];
+  const cp = Math.max(0, Math.min(1, (w.t - WIZARD_RISE) / WIZARD_CHARGE));
+
+  ctx.save();
+  ctx.translate(w.x, oy);
+  if (w.kind === 'viking') drawVikingBody(); else drawWitchBody();
+  // Atış öncesi elinde/çekicinde büyüyen enerji
+  if (!w.fired) drawChargeOrb(B.dx, B.ly, cp, w.kind);
+  ctx.restore();
+}
+
+// ================= PROJEKTİLLER: ELEKTRİK / YILAN =================
+function projectilePoints(f) {
+  if (f.kind === 'snake') {
+    const pts = [];
+    for (let i = 0; i < SNAKE_SEGS; i++) {
+      const y = f.y + i * SNAKE_SPACING;
+      pts.push({ x: f.x + Math.sin(y * 0.05 + f.phase) * SNAKE_AMP, y: y, r: i === 0 ? 13 : Math.max(7, 12 - i * 0.45) });
+    }
+    return pts;
+  }
+  // elektrik: kafa + arkasındaki iz
+  return [{ x: f.x, y: f.y, r: f.r }, { x: f.x, y: f.y + 35, r: 12 }, { x: f.x, y: f.y + 70, r: 9 }];
+}
+
+function drawBolt(f) {
+  const len = 110, steps = 9;
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const off = i === 0 ? 0 : (Math.random() - 0.5) * 18;
+    pts.push([f.x + off, f.y + (i / steps) * len]);
+  }
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  [[18, 'rgba(70,160,255,0.30)'], [8, 'rgba(150,215,255,0.9)'], [3, '#ffffff']].forEach(([w, col]) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+    ctx.stroke();
+  });
+  // Yan kollar
+  ctx.strokeStyle = 'rgba(200,235,255,0.8)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 2; i++) {
+    const p = pts[2 + i * 3];
+    const dir = Math.random() > 0.5 ? 1 : -1;
+    ctx.beginPath();
+    ctx.moveTo(p[0], p[1]);
+    ctx.lineTo(p[0] + dir * 14, p[1] + 8);
+    ctx.lineTo(p[0] + dir * 8, p[1] + 20);
+    ctx.stroke();
+  }
+  // Kafa parlaması
+  const g = ctx.createRadialGradient(f.x, f.y, 1, f.x, f.y, f.r * 2.2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.4, 'rgba(120,200,255,0.8)');
+  g.addColorStop(1, 'rgba(60,140,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(f.x, f.y, f.r * 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSnake(f) {
+  const pts = projectilePoints(f);
+  ctx.save();
+  // Kuyruktan başa doğru çiz
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    circ(ctx, p.x, p.y, p.r, i % 2 ? '#1f9d4e' : '#2fcf68');
+    circ(ctx, p.x, p.y + p.r * 0.2, p.r * 0.45, 'rgba(210,255,200,0.35)');
+  }
+  const h = pts[0];
+  // Dil
+  const flick = Math.sin(performance.now() / 60) > 0;
+  if (flick) {
+    ctx.strokeStyle = '#ff3b4a';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(h.x, h.y - h.r);
+    ctx.lineTo(h.x, h.y - h.r - 9);
+    ctx.lineTo(h.x - 4, h.y - h.r - 14);
+    ctx.moveTo(h.x, h.y - h.r - 9);
+    ctx.lineTo(h.x + 4, h.y - h.r - 14);
+    ctx.stroke();
+  }
+  // Gözler
+  circ(ctx, h.x - 5, h.y - 3, 3.6, '#fff');
+  circ(ctx, h.x + 5, h.y - 3, 3.6, '#fff');
+  circ(ctx, h.x - 5, h.y - 4, 1.8, '#111');
+  circ(ctx, h.x + 5, h.y - 4, 1.8, '#111');
+  ctx.restore();
+}
+
+function drawProjectile(f) {
+  if (f.kind === 'snake') drawSnake(f); else drawBolt(f);
+}
+
+function drawHero(h) {
+  const r = HERO_RADIUS;
+  const tIn = Math.min(1, h.age / 250);
+  const tOut = Math.min(1, (HERO_LIFE - h.age) / 300);
+  const e = Math.max(0, Math.min(tIn, tOut));
+  const scale = e < 1 ? e * (2 - e) : 1;           // yumuşak büyüme/küçülme
+  const yo = Math.sin(h.age / 180) * 4;
+
+  ctx.save();
+  ctx.translate(h.x, h.y + yo);
+  ctx.scale(scale, scale);
+
+  // Turuncu parlama
+  const glow = ctx.createRadialGradient(0, 0, r * 0.6, 0, 0, r * 1.9);
+  glow.addColorStop(0, 'rgba(255,120,0,0.45)');
+  glow.addColorStop(1, 'rgba(255,120,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Gövde
+  ctx.fillStyle = '#26262c';
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#ff7b00';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Parlama
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.beginPath();
+  ctx.arc(-r * 0.45, -r * 0.5, r * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Kapak + fitil + kıvılcım
+  ctx.fillStyle = '#555';
+  ctx.fillRect(-7, -r - 6, 14, 8);
+  ctx.strokeStyle = '#c9a66b';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -r - 6);
+  ctx.quadraticCurveTo(10, -r - 18, 17, -r - 14);
+  ctx.stroke();
+  ctx.fillStyle = Math.random() > 0.5 ? '#ffd166' : '#ff7b00';
+  ctx.beginPath();
+  ctx.arc(17, -r - 14, 4 + Math.random() * 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Gözler (bakışı oyuncuyu takip eder)
+  let lx = player.x - h.x, ly = player.y - h.y;
+  const ll = Math.hypot(lx, ly) || 1;
+  lx = (lx / ll) * r * 0.07;
+  ly = (ly / ll) * r * 0.07;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.36, -r * 0.08, r * 0.2, r * 0.25, 0, 0, Math.PI * 2);
+  ctx.ellipse(r * 0.36, -r * 0.08, r * 0.2, r * 0.25, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(-r * 0.36 + lx, -r * 0.08 + ly, r * 0.1, 0, Math.PI * 2);
+  ctx.arc(r * 0.36 + lx, -r * 0.08 + ly, r * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Kaşlar (kızgın, içe doğru eğik)
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = r * 0.12;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.68, -r * 0.55);
+  ctx.lineTo(-r * 0.12, -r * 0.34);
+  ctx.moveTo(r * 0.68, -r * 0.55);
+  ctx.lineTo(r * 0.12, -r * 0.34);
+  ctx.stroke();
+
+  // Ağız (sırıtış + dişler)
+  ctx.fillStyle = '#7a1010';
+  ctx.beginPath();
+  ctx.arc(0, r * 0.28, r * 0.42, 0.05 * Math.PI, 0.95 * Math.PI);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.2, r * 0.3); ctx.lineTo(-r * 0.1, r * 0.3); ctx.lineTo(-r * 0.15, r * 0.45);
+  ctx.moveTo(r * 0.2, r * 0.3); ctx.lineTo(r * 0.1, r * 0.3); ctx.lineTo(r * 0.15, r * 0.45);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawFoodBoostAura(g) {
+  const pulse = 1 + Math.sin(performance.now() / 70) * 0.08;
+  ctx.save();
+  ctx.translate(g.x, g.y);
+  ctx.strokeStyle = 'rgba(255,170,0,0.85)';
+  ctx.fillStyle = 'rgba(255,170,0,0.15)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, (g.radius + 8) * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawShieldItem(s) {
+  const pulse = 1 + Math.sin(s.pulse) * 0.12;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, s.radius * 1.6 * pulse);
+  grad.addColorStop(0, 'rgba(120,210,255,0.55)');
+  grad.addColorStop(1, 'rgba(120,210,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, s.radius * 1.6 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = Math.round(s.radius * 1.5 * pulse) + 'px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🛡️', 0, 2);
+  ctx.restore();
+}
+
+function drawPlayerShield() {
+  const pulse = 1 + Math.sin(performance.now() / 150) * 0.05;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.fillStyle = 'rgba(100,200,255,0.18)';
+  ctx.strokeStyle = 'rgba(140,220,255,0.9)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, (player.radius + 12) * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ================= PARÇACIKLAR =================
+function burst(arr, x, y, colors, count, sMin, sMax) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+    const speed = sMin + Math.random() * (sMax - sMin);
+    arr.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.012 + Math.random() * 0.015,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: 2 + Math.random() * 2.5
+    });
+  }
+}
+
+function stepParticles(arr, s) {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const p = arr[i];
+    p.vy += 0.045 * s;
+    const f = Math.pow(0.985, s);
+    p.vx *= f; p.vy *= f;
+    p.x += p.vx * s;
+    p.y += p.vy * s;
+    p.life -= p.decay * s;
+    if (p.life <= 0) arr.splice(i, 1);
+  }
+}
+
+function drawParticles(c, arr) {
+  arr.forEach(p => {
+    c.globalAlpha = Math.max(p.life, 0);
+    c.fillStyle = p.color;
+    c.beginPath();
+    c.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    c.fill();
+  });
+  c.globalAlpha = 1;
+}
+
+// ================= HAVAİ FİŞEK =================
+const fireworksCanvas = document.getElementById('fireworksCanvas');
+const fctx = fireworksCanvas.getContext('2d');
+function resizeFireworksCanvas() {
+  fireworksCanvas.width = window.innerWidth;
+  fireworksCanvas.height = window.innerHeight;
+}
+resizeFireworksCanvas();
+window.addEventListener('resize', resizeFireworksCanvas);
+
+let fireworkParticles = [];
+let fwTimer = 0;
+const FIREWORK_COLORS = ['#ff6b6b', '#ffd166', '#06d6a0', '#4cc9f0', '#f72585', '#ffffff', '#b892ff'];
+
+function launchFirework() {
+  const x = fireworksCanvas.width * (0.15 + Math.random() * 0.7);
+  const y = fireworksCanvas.height * (0.15 + Math.random() * 0.45);
+  const color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+  burst(fireworkParticles, x, y, [color], 45, 2, 6);
+}
+
+function triggerFireworksCelebration() {
+  fwTimer = 0;
+  fireworkParticles = [];
+  for (let i = 0; i < 4; i++) {
+    setTimeout(() => { if (winActive) launchFirework(); }, i * 250);
+  }
+}
+
+// ================= KONTROL =================
+const joystickZone = document.getElementById('joystickZone');
+const joystickBase = document.getElementById('joystickBase');
+const joystickKnob = document.getElementById('joystickKnob');
+
+let joystickActive = false;
+let joystickStart = { x: 0, y: 0 };
+let joystickVector = { x: 0, y: 0 };
+const JOY_RADIUS = 55;
+
+function startJoystick(clientX, clientY) {
+  joystickActive = true;
+  joystickStart = { x: clientX, y: clientY };
+  joystickBase.style.left = (clientX - 55) + 'px';
+  joystickBase.style.top = (clientY - 55) + 'px';
+  joystickKnob.style.left = (clientX - 25) + 'px';
+  joystickKnob.style.top = (clientY - 25) + 'px';
+  joystickBase.style.display = 'block';
+  joystickKnob.style.display = 'block';
+}
+function moveJoystick(clientX, clientY) {
+  if (!joystickActive) return;
+  let dx = clientX - joystickStart.x;
+  let dy = clientY - joystickStart.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > JOY_RADIUS) { dx = (dx / dist) * JOY_RADIUS; dy = (dy / dist) * JOY_RADIUS; }
+  joystickKnob.style.left = (joystickStart.x + dx - 25) + 'px';
+  joystickKnob.style.top = (joystickStart.y + dy - 25) + 'px';
+  joystickVector.x = dx / JOY_RADIUS;
+  joystickVector.y = dy / JOY_RADIUS;
+}
+function endJoystick() {
+  joystickActive = false;
+  joystickVector = { x: 0, y: 0 };
+  joystickBase.style.display = 'none';
+  joystickKnob.style.display = 'none';
+}
+
+joystickZone.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; startJoystick(t.clientX, t.clientY); }, { passive: true });
+joystickZone.addEventListener('touchmove', (e) => { const t = e.changedTouches[0]; moveJoystick(t.clientX, t.clientY); }, { passive: true });
+joystickZone.addEventListener('touchend', endJoystick, { passive: true });
+joystickZone.addEventListener('touchcancel', endJoystick, { passive: true });
+
+let mouseDown = false;
+joystickZone.addEventListener('mousedown', (e) => { mouseDown = true; startJoystick(e.clientX, e.clientY); });
+window.addEventListener('mousemove', (e) => { if (mouseDown) moveJoystick(e.clientX, e.clientY); });
+window.addEventListener('mouseup', () => { mouseDown = false; endJoystick(); });
+
+const keys = {};
+window.addEventListener('keydown', (e) => keys[e.key] = true);
+window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+// ================= HUD =================
+const hud = document.getElementById('hud');
+const scoreBox = document.getElementById('scoreBox');
+
+function updateHud() {
+  if (selectedMode === 'normal') {
+    scoreBox.textContent = '🍽️ ' + eaten + ' / ' + TOTAL_TO_EAT;
+  } else {
+    scoreBox.textContent = '🍽️ ' + eaten + (hasShield ? '  ·  🛡️' : '');
+  }
+}
+
+// ================= OYUN MANTIĞI =================
+function onEat() {
+  eaten++;
+  player.chewTimer = CHEW_DURATION;
+
+  if (selectedMode === 'normal') {
+    if (eaten >= TOTAL_TO_EAT) {
+      state = 'over';
+      winActive = true;
+      document.getElementById('gameOverScreen').style.display = 'flex';
+      triggerFireworksCelebration();
+    } else {
+      foods.push(spawnFood());
+    }
+  } else {
+    foods.push(spawnFood());
+
+    // Her 25 yemde bomba sıklığı artar: mevcut pencereye de hemen 1 ekstra bomba ekle
+    if (eaten % BOMB_STEP === 0) {
+      const remaining = Math.max(0, windowEnd - gameTime);
+      bombQueue.push(gameTime + 300 + Math.random() * Math.max(0, remaining - 300));
+    }
+
+    // Skor 10 olunca büyücü gelmeye başlar (ilk çıkış 3-7 sn sonra)
+    if (eaten === WIZARD_MIN_SCORE) wizardNext = gameTime + 3000 + Math.random() * 4000;
+
+    // Her 50 yemin içinde rastgele 1 yemde kalkan düşer
+    if (eaten === shieldTarget) {
+      const p = randomPos(30, 120);
+      shieldItem = { x: p.x, y: p.y, radius: 20, pulse: 0 };
+      const block = Math.floor((shieldTarget - 1) / SHIELD_STEP);
+      shieldTarget = (block + 1) * SHIELD_STEP + 1 + Math.floor(Math.random() * SHIELD_STEP);
+    }
+  }
+  updateHud();
+}
+
+function spawnHero() {
+  const p = randomPos(HERO_RADIUS + 20, 220);
+  hero = { x: p.x, y: p.y, age: 0 };
+  burst(fx, p.x, p.y, ['#ff7b00', '#ffd166', '#ffffff'], 24, 2, 5);
+
+  // Bize uzaktan 5 rastgele bomba
+  for (let i = 0; i < HERO_BOMBS; i++) {
+    const bp = spawnBomb(HERO_BOMB_MIN_DIST);
+    burst(fx, bp.x, bp.y, ['#ff7b00', '#ffd166'], 12, 1, 3);
+  }
+
+  // Bomba adam gelince 1 adet mega bomba kesin düşer
+  spawnGuaranteedMega();
+
+  // Yemlere 3 sn boyunca hız bonusu (oyuncu hızının 5 katı) ve bizden kaçarlar
+  foodBoost = HERO_LIFE;
+}
+
+function spawnWizard() {
+  // Kadın seçtiysen Viking, erkek seçtiysen Cadı gelir
+  const kind = selectedChar === 'girl' ? 'viking' : 'witch';
+  const B = BOSS[kind];
+
+  // %60 ihtimalle oyuncunun hizasında, değilse rastgele
+  let x;
+  if (Math.random() < 0.6) x = player.x - B.dx + (Math.random() - 0.5) * 100;
+  else x = Math.random() * canvas.width;
+  const minX = B.halfW + 4, maxX = canvas.width - B.dx - 30;
+  x = Math.max(minX, Math.min(maxX, x));
+
+  // Oyuncu ekranın alt bölgesindeyse büyücü tam üstünde yükselip haksız yere öldürmesin:
+  // yan tarafa kaydır (en az halfW + oyuncu yarıçapı + 40 px boşluk)
+  if (player.y > canvas.height - 220) {
+    const gap = B.halfW + player.radius + 40;
+    if (Math.abs(player.x - x) < gap) {
+      const right = player.x + gap, left = player.x - gap;
+      if (right <= maxX && (left < minX || Math.random() < 0.5)) x = right;
+      else if (left >= minX) x = left;
+      else x = Math.max(minX, Math.min(maxX, right > maxX ? left : right));
+    }
+  }
+
+  // 4 şerit: ana şerit (elden/çekiçten) + 3 rastgele şerit, birbirine en az LANE_MIN_GAP uzaklıkta
+  let lanes = [x + B.dx];
+  for (let attempt = 0; attempt < 30 && lanes.length < WIZARD_LANES; attempt++) {
+    lanes = [x + B.dx];
+    let tries = 0;
+    while (lanes.length < WIZARD_LANES && tries < 100) {
+      tries++;
+      const cand = 30 + Math.random() * Math.max(1, canvas.width - 60);
+      if (lanes.every(l => Math.abs(l - cand) >= LANE_MIN_GAP)) lanes.push(cand);
+    }
+  }
+  wizard = { x: x, t: 0, fired: false, lanes: lanes, kind: kind };
+
+  // Büyücü gelince 1 adet mega bomba kesin düşer
+  spawnGuaranteedMega();
+}
+
+function killPlayer(x, y, colors, count, maxSpeed) {
+  burst(fx, x, y, colors, count, 2, maxSpeed);
+  exploded = true;
+  state = 'dead';
+  deadTimer = 800;
+}
+
+function updateWizard(dt, s) {
+  // Zamanı gelince çıkar (sadece skor 10 ve sonrasında)
+  if (!wizard && eaten >= WIZARD_MIN_SCORE && gameTime >= wizardNext) spawnWizard();
+
+  if (wizard) {
+    const B = BOSS[wizard.kind];
+    wizard.t += dt;
+
+    if (!wizard.fired && wizard.t >= WIZARD_RISE + WIZARD_CHARGE) {
+      wizard.fired = true;
+      const cols = wizard.kind === 'viking' ? ['#bfe6ff', '#4aa8ff', '#ffffff'] : ['#3ddc84', '#b8ffd0', '#ffffff'];
+      wizard.lanes.forEach((lx, i) => {
+        const ly = i === 0 ? wizardOriginY(wizard) + B.ly : canvas.height - 14;
+        fireballs.push({ x: lx, y: ly, r: FIREBALL_RADIUS, kind: B.proj, phase: Math.random() * 6.28, speed: B.speed });
+        burst(fx, lx, ly, cols, 18, 1, 4);
+      });
+    }
+
+    // Karaktere dokunmak ölümcül (kalkan korumaz)
+    const oy = wizardOriginY(wizard);
+    const left = wizard.x - B.halfW, right = wizard.x + B.halfW;
+    const top = oy - BOSS_HEIGHT * 0.97, bottom = oy;
+    const nx = Math.max(left, Math.min(right, player.x));
+    const ny = Math.max(top, Math.min(bottom, player.y));
+    if (Math.hypot(player.x - nx, player.y - ny) < player.radius * 0.8) {
+      if (hasShield) {
+        hasShield = false;
+        burst(fx, player.x, player.y, ['#4cc9f0', '#ffffff'], 30, 2, 5);
+      }
+      killPlayer(player.x, player.y, ['#ff7b00', '#ffd166', '#ff3b30', '#ffffff'], 70, 8);
+      return;
+    }
+
+    if (wizard.t >= WIZARD_TOTAL) {
+      wizard = null;
+      wizardNext = gameTime + 8000 + Math.random() * 8000;   // sonraki 8-16 sn sonra
+    }
+  }
+
+  // Elektrik / yılan ilerlet + çarpışma
+  for (let i = fireballs.length - 1; i >= 0; i--) {
+    const f = fireballs[i];
+    f.y -= f.speed * s;
+    if (f.kind === 'bolt' && Math.random() < 0.6) {
+      fx.push({ x: f.x + (Math.random() - 0.5) * 14, y: f.y + 10 + Math.random() * 40, vx: (Math.random() - 0.5) * 0.8, vy: 0.2 + Math.random() * 0.6,
+                life: 1, decay: 0.07, color: Math.random() > 0.5 ? '#9fd8ff' : '#ffffff', size: 1.5 + Math.random() * 2 });
+    }
+    if (f.y < -160) { fireballs.splice(i, 1); continue; }
+
+    const pts = projectilePoints(f);
+    const hit = pts.some(p => Math.hypot(player.x - p.x, player.y - p.y) < player.radius * 0.7 + p.r * 0.9);
+    if (hit) {
+      fireballs.splice(i, 1);
+      if (hasShield) {
+        hasShield = false;
+        burst(fx, player.x, player.y, ['#4cc9f0', '#ffffff', '#9be7ff'], 30, 2, 5);
+        updateHud();
+      } else {
+        const cols = f.kind === 'bolt' ? ['#bfe6ff', '#4aa8ff', '#ffffff'] : ['#3ddc84', '#1f9d4e', '#b8ffd0'];
+        killPlayer(player.x, player.y, cols, 80, 9);
+        return;
+      }
+    }
+  }
+}
+
+function updateEndless(dt, s) {
+  gameTime += dt;
+
+  // Her 15 sn'de bir bomba adam
+  if (gameTime >= nextHeroTime) {
+    nextHeroTime += HERO_INTERVAL;
+    spawnHero();
+  }
+  if (hero) {
+    hero.age += dt;
+    if (hero.age >= HERO_LIFE) hero = null;
+  }
+
+  // Yeni 15 sn'lik pencere: yemlere göre 1, 2, 3... bomba rastgele zamanlara dağıtılır
+  while (gameTime >= windowEnd) {
+    const n = BASE_BOMBS + Math.floor(eaten / BOMB_STEP);
+    for (let i = 0; i < n; i++) {
+      bombQueue.push(windowEnd + 500 + Math.random() * (BOMB_WINDOW - 1000));
+    }
+    windowEnd += BOMB_WINDOW;
+  }
+
+  // Zamanı gelen bombaları çıkar
+  for (let i = bombQueue.length - 1; i >= 0; i--) {
+    if (bombQueue[i] <= gameTime) {
+      bombQueue.splice(i, 1);
+      spawnBomb();
+    }
+  }
+
+  // Bombaları yaşlandır / çarpışma
+  for (let i = bombs.length - 1; i >= 0; i--) {
+    const b = bombs[i];
+    b.age += dt;
+    if (b.age >= BOMB_LIFE) { bombs.splice(i, 1); continue; }
+
+    if (bombHit(b)) {
+      bombs.splice(i, 1);
+      if (hasShield && b.type !== 'mega') {
+        // Kalkan normal ve kırmızı bombayı emer
+        hasShield = false;
+        burst(fx, b.x, b.y, ['#4cc9f0', '#ffffff', '#9be7ff'], 30, 2, 5);
+        updateHud();
+      } else {
+        // Mega bomba kalkanı da kırar ve yine öldürür
+        if (hasShield) {
+          hasShield = false;
+          burst(fx, player.x, player.y, ['#4cc9f0', '#ffffff'], 30, 2, 5);
+        }
+        burst(fx, b.x, b.y, ['#ff7b00', '#ffd166', '#ff3b30', '#ffffff'], b.type === 'mega' ? 150 : 70, 2, b.type === 'mega' ? 12 : 8);
+        exploded = true;
+        state = 'dead';
+        deadTimer = 800;
+        return;
+      }
+    }
+  }
+
+  // Büyücü ve alev topları
+  updateWizard(dt, s);
+  if (state === 'dead') return;
+
+  // Kalkan toplama
+  if (shieldItem) {
+    shieldItem.pulse += 0.08 * s;
+    if (Math.hypot(player.x - shieldItem.x, player.y - shieldItem.y) < player.radius + shieldItem.radius * 0.8) {
+      hasShield = true;
+      burst(fx, shieldItem.x, shieldItem.y, ['#4cc9f0', '#ffffff'], 25, 2, 4);
+      shieldItem = null;
+      updateHud();
+    }
+  }
+}
+
+function update(dt, s) {
+  stepParticles(fx, s);
+  stepParticles(fireworkParticles, s);
+
+  if (winActive) {
+    fwTimer += dt;
+    if (fwTimer >= 580) { fwTimer = 0; launchFirework(); }
+  }
+
+  if (state === 'dead') {
+    deadTimer -= dt;
+    if (deadTimer <= 0) {
+      state = 'over';
+      const newRecord = eaten > bestScore;
+      if (newRecord) {
+        bestScore = eaten;
+        try { localStorage.setItem('kovalamaca_best', String(bestScore)); } catch (e) {}
+      }
+      document.getElementById('deathScore').textContent = eaten;
+      document.getElementById('deathBest').textContent = bestScore;
+      document.getElementById('deathRecord').style.display = newRecord ? 'block' : 'none';
+      document.getElementById('deathScreen').style.display = 'flex';
+    }
+    return;
+  }
+  if (state !== 'playing') return;
+
+  // Hareket
+  let dx = joystickVector.x;
+  let dy = joystickVector.y;
+  if (keys['ArrowUp'] || keys['w']) dy = -1;
+  if (keys['ArrowDown'] || keys['s']) dy = 1;
+  if (keys['ArrowLeft'] || keys['a']) dx = -1;
+  if (keys['ArrowRight'] || keys['d']) dx = 1;
+
+  const mag = Math.hypot(dx, dy);
+  if (mag > 0.05) {
+    const norm = mag < 1 ? 1 : mag;
+    player.x += (dx / norm) * player.speed * mag * s;
+    player.y += (dy / norm) * player.speed * mag * s;
+  }
+
+  if (player.chewTimer > 0) player.chewTimer = Math.max(0, player.chewTimer - dt);
+
+  // Ekran kenarları oyunun sınırı (öbür tarafa geçiş yok)
+  player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+  // Yemler dolaşır (bomba adam gelince 3 sn boyunca oyuncunun 2 katı hızla)
+  if (foodBoost > 0) foodBoost = Math.max(0, foodBoost - dt);
+  const boosted = foodBoost > 0;
+  foods.forEach(g => {
+    g.bob += 0.08 * s;
+    let mx = g.vx, my = g.vy;
+    if (boosted) {
+      // Oyuncudan uzaklaşma yönü
+      let fx2 = g.x - player.x, fy2 = g.y - player.y;
+      let fm = Math.hypot(fx2, fy2);
+      if (fm < 1) { fx2 = Math.random() - 0.5; fy2 = Math.random() - 0.5; fm = Math.hypot(fx2, fy2) || 1; }
+      fx2 /= fm; fy2 /= fm;
+      // Duvara dayandıysa duvara doğru değil, duvar boyunca kaçsın
+      const margin = g.radius + 1;
+      if (g.x <= margin && fx2 < 0) { fx2 = 0; fy2 = fy2 >= 0 ? 1 : -1; }
+      if (g.x >= canvas.width - margin && fx2 > 0) { fx2 = 0; fy2 = fy2 >= 0 ? 1 : -1; }
+      if (g.y <= margin && fy2 < 0) { fy2 = 0; fx2 = fx2 >= 0 ? 1 : -1; }
+      if (g.y >= canvas.height - margin && fy2 > 0) { fy2 = 0; fx2 = fx2 >= 0 ? 1 : -1; }
+      const sp = player.speed * FOOD_BOOST_MULT;
+      mx = fx2 * sp;
+      my = fy2 * sp;
+      g.vx = fx2 * 0.7;   // boost bitince bu yönde yavaşça devam etsin
+      g.vy = fy2 * 0.7;
+    }
+    g.x += mx * s;
+    g.y += my * s;
+    if (g.x < g.radius) { g.x = g.radius; g.vx = Math.abs(g.vx); }
+    if (g.x > canvas.width - g.radius) { g.x = canvas.width - g.radius; g.vx = -Math.abs(g.vx); }
+    if (g.y < g.radius) { g.y = g.radius; g.vy = Math.abs(g.vy); }
+    if (g.y > canvas.height - g.radius) { g.y = canvas.height - g.radius; g.vy = -Math.abs(g.vy); }
+  });
+
+  // Yem yeme
+  for (let i = foods.length - 1; i >= 0; i--) {
+    const g = foods[i];
+    if (Math.hypot(player.x - g.x, player.y - g.y) < player.radius * 0.75 + g.radius * 0.75) {
+      foods.splice(i, 1);
+      onEat();
+      if (state !== 'playing') break;
+    }
+  }
+
+  if (state === 'playing' && selectedMode === 'endless') updateEndless(dt, s);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (state !== 'menu') {
+    if (shieldItem) drawShieldItem(shieldItem);
+    if (wizard) { drawWizardWarning(wizard); drawWizard(wizard); }
+    if (hero) drawHero(hero);
+    const ft = foodType();
+    foods.forEach(g => {
+      if (foodBoost > 0) drawFoodBoostAura(g);
+      drawCharacter(ctx, ft, g.x, g.y, g.radius, 0, g.bob);
+    });
+    bombs.forEach(drawBomb);
+    fireballs.forEach(drawProjectile);
+    if (!exploded) {
+      drawCharacter(ctx, selectedChar, player.x, player.y, player.radius, player.chewTimer, 0);
+      if (hasShield) drawPlayerShield();
+    }
+    drawParticles(ctx, fx);
+  }
+
+  fctx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
+  drawParticles(fctx, fireworkParticles);
+}
+
+let lastTime = null;
+function loop(now) {
+  if (lastTime === null) lastTime = now;
+  const dt = Math.min(now - lastTime, 50);   // sekme arka plandaysa sıçramayı engelle
+  lastTime = now;
+  const s = dt / 16.667;                      // 60fps'e göre normalize (120Hz iPhone'da hız aynı kalır)
+  update(dt, s);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ================= MENÜ / EKRANLAR =================
+const menuScreen = document.getElementById('menuScreen');
+const winScreen = document.getElementById('gameOverScreen');
+const deathScreen = document.getElementById('deathScreen');
+
+function startGame() {
+  eaten = 0; bombs = []; shieldItem = null; hasShield = false;
+  gameTime = 0; windowEnd = 0; bombQueue = [];
+  hero = null; foodBoost = 0; nextHeroTime = HERO_INTERVAL;
+  wizard = null; fireballs = []; wizardNext = Infinity;
+  exploded = false; fx = []; fireworkParticles = []; winActive = false;
+  shieldTarget = 1 + Math.floor(Math.random() * SHIELD_STEP);
+  player.chewTimer = 0;
+  resetPlayer();
+  initFoods();
+
+  menuScreen.style.display = 'none';
+  winScreen.style.display = 'none';
+  deathScreen.style.display = 'none';
+  hud.style.display = 'flex';
+  state = 'playing';
+  updateHud();
+}
+
+function showMenu() {
+  state = 'menu';
+  winActive = false;
+  exploded = false;
+  winScreen.style.display = 'none';
+  deathScreen.style.display = 'none';
+  hud.style.display = 'none';
+  menuScreen.style.display = 'flex';
+}
+
+// Karakter önizlemeleri
+document.querySelectorAll('.charBtn').forEach(btn => {
+  const c = btn.querySelector('canvas').getContext('2d');
+  drawCharacter(c, btn.dataset.char, 64, 68, 34, 0, 0);
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.charBtn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedChar = btn.dataset.char;
+    document.getElementById('charHint').textContent =
+      selectedChar === 'boy' ? 'Yemler kadın karakter olacak' : 'Yemler erkek karakter olacak';
+  });
+});
+
+document.querySelectorAll('.modeBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.modeBtn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedMode = btn.dataset.mode;
+  });
+});
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+document.getElementById('retryBtn').addEventListener('click', startGame);
+document.getElementById('menuBtnWin').addEventListener('click', showMenu);
+document.getElementById('menuBtnDead').addEventListener('click', showMenu);
+</script>
+</body>
+</html>
